@@ -1,0 +1,7526 @@
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+/*
+ * crossbar_interrupt.c
+ *
+ *  Created on: 2015-11-13
+ *      Author: Xaxdus
+ */
+
+#include"xil_io.h"
+#include"xstatus.h"
+#include "crossbar_interrupt.h"
+#include "crossbar_1588.h"
+
+static INTC Intc;//全局的INTC
+extern Delay_Resp delay_resp;
+extern u32 interruptflag;
+extern  int state;
+extern Time_1588 sec_time_1588[4];
+/**
+ * 	初始化中断配置
+ */
+int init_1588_Interrupt(){
+	int result;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Config* IntcConfig;
+	/* Initializethe interrupt controller driver so that it is ready to
+	* use.
+	* */
+	IntcConfig =XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (IntcConfig== NULL)
+	{
+		return XST_FAILURE;
+	}
+	/* Initializethe SCU and GIC to enable the desired interrupt
+	* configuration.*/
+	result =XScuGic_CfgInitialize(IntcInstancePtr, IntcConfig,
+	IntcConfig->CpuBaseAddress);
+	if (result !=XST_SUCCESS)
+	{
+		return XST_FAILURE;
+	}
+	XScuGic_SetPriorityTriggerType(IntcInstancePtr,crossbar_1588_interruptID,
+	0xA0, 0x3);
+	/* Connect the interrupt handler that will be called when an
+	* interrupt occurs for the device. */
+	result =XScuGic_Connect(IntcInstancePtr, crossbar_1588_interruptID,
+	(Xil_ExceptionHandler)deal_1588_interrupt, 0);
+	if (result !=XST_SUCCESS)
+	{
+		return result;
+	}
+	/* Enable the interrupt for the 1588 controller device. */
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+	/* Initializethe exception table and register the interrupt controller
+	* handler withthe exception table. */
+	Xil_ExceptionInit();
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+	(Xil_ExceptionHandler)INTC_HANDLER,IntcInstancePtr);
+	/* Enablenon-critical exceptions */
+	Xil_ExceptionEnable();
+	return XST_SUCCESS;
+}
+/**
+ *
+ * 1588中断的处理函数
+ */
+void deal_1588_interrupt(void*InstancePtr){
+	//进入中断之后先将中断关闭
+	u32 timeArray[4];
+	Time_1588 time_1588;
+	INTC* IntcInstancePtr = &Intc;
+	XScuGic_Disable(IntcInstancePtr,crossbar_1588_interruptID);
+	///////////////////////////////////////////////////
+	//来中断的时候,需要读取接收寄存器的数据
+#if 0//作为主时钟的时候,主要是解析Delay_Req
+	switch(state){
+		case 0 :
+				state = 1;//开始发送FollowUp
+			break;
+		case 1://这是发送完FollowUP产生的中断
+			state = 2;//证明Followup发送完成
+			break;
+		case 2:
+			//接收Delayreq
+	    	rx_get_128(timeArray);
+	    	time_1588 = transto1588(timeArray);
+	    	pack1588_to_Delay_Resp(&time_1588,&delay_resp);
+	    	state = 3;
+			break;
+		case 3:break;
+
+
+	}
+
+
+
+#else //次时钟
+	switch(state){
+
+		case -1:
+				rx_get_128(timeArray);
+				sec_time_1588[1] = transto1588(timeArray);//获取t2
+				LogInfo(&sec_time_1588[1]);
+				state = 0;
+
+				break;
+		case 0 :
+		    	rx_get_128(timeArray);
+		    	sec_time_1588[0] = transto1588(timeArray);//获取t1
+		    	LogInfo(&sec_time_1588[0]);
+		    	state = 1;//
+			break;
+		case 1://这是发送完delay_req产生的中断
+			state = 2;
+	    	tx_get_128(timeArray);
+	    	sec_time_1588[2] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[2]);
+			//证明delay_req发送完成,读取发送的时间t3
+			break;
+		case 2:
+			//接收DelayResq
+	    	rx_get_128(timeArray);
+	    	sec_time_1588[3] = transto1588(timeArray);
+	    	LogInfo(&sec_time_1588[3]);
+	    	state = -1;
+			break;
+
+
+
+	}
+	printf("zhongduan = %d \n",state);
+
+
+#endif
+
+
+    //////////////////////////////////////////////////////
+	//完成中断，再将中断使能
+	XScuGic_Enable(IntcInstancePtr,crossbar_1588_interruptID);
+
+}
+
+
+
